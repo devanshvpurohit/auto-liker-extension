@@ -20,40 +20,48 @@ const MAX_CONSECUTIVE_SCROLLS = 15; // Safeguard if page stops loading or gets r
 const checkAlreadyLiked = (element, platform) => {
   if (!element) return false;
   
+  // Generic check: Look for "Unlike" or "Liked" text in the element or its parent
+  const checkText = (el) => {
+    const text = (el.innerText || el.getAttribute('aria-label') || '').toLowerCase();
+    return text.includes('unlike') || text.includes('liked') || text.includes('♥');
+  };
+
   switch (platform) {
     case 'fanime':
-      return element.className.includes('Active') || (element.innerText || '').includes('♥') || (element.innerText || '').includes('Liked');
+      return element.className.includes('Active') || checkText(element);
 
     case 'linkedin':
-      // Check for active classes or aria-pressed state
-      return element.classList.contains('react-button__trigger--active') || 
-             element.getAttribute('aria-pressed') === 'true' ||
-             element.querySelector('.react-button__trigger--active') !== null;
+      const isLinkedInActive = element.classList.contains('react-button__trigger--active') || 
+                               element.getAttribute('aria-pressed') === 'true' ||
+                               element.querySelector('.react-button__trigger--active') !== null;
+      if (isLinkedInActive) return true;
+      // Fallback: check text in the button
+      return checkText(element);
 
     case 'instagram':
-      // Instagram hearts have aria-label="Unlike" when already liked
       const instaParentBtn = element.closest('button');
-      if (instaParentBtn && (instaParentBtn.querySelector('svg[aria-label="Unlike"]') || instaParentBtn.getAttribute('aria-label') === 'Unlike')) return true;
+      if (instaParentBtn) {
+        if (instaParentBtn.querySelector('svg[aria-label="Unlike"]') || instaParentBtn.getAttribute('aria-label') === 'Unlike') return true;
+      }
       return element.getAttribute('aria-label') === 'Unlike' || element.querySelector('svg[aria-label="Unlike"]') !== null;
 
     case 'twitter':
-      // Twitter like button data-testid turns into "unlike"
       const tweetArticle = element.closest('article');
-      if (tweetArticle && tweetArticle.querySelector('div[data-testid="unlike"]')) return true;
-      return element.getAttribute('data-testid') === 'unlike';
+      if (tweetArticle && (tweetArticle.querySelector('div[data-testid="unlike"]') || tweetArticle.querySelector('button[aria-label*="Liked"]'))) return true;
+      return element.getAttribute('data-testid') === 'unlike' || (element.getAttribute('aria-label') || '').includes('Liked');
 
     default:
-      // Custom mode: default check based on common patterns
-      const lowerClass = element.className.toLowerCase ? element.className.toLowerCase() : '';
+      // Custom/Default: Deep check of attributes and text
       const ariaPressed = element.getAttribute('aria-pressed');
-      const ariaLabel = (element.getAttribute('aria-label') || '').toLowerCase();
+      if (ariaPressed === 'true') return true;
       
-      return ariaPressed === 'true' || 
-             lowerClass.includes('active') || 
-             lowerClass.includes('liked') || 
-             lowerClass.includes('unlike') ||
-             ariaLabel.includes('unlike') ||
-             ariaLabel.includes('liked');
+      if (checkText(element)) return true;
+      
+      // Check parent button if it exists
+      const parentBtn = element.closest('button');
+      if (parentBtn && checkText(parentBtn)) return true;
+
+      return false;
   }
 };
 
