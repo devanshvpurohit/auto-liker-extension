@@ -28,7 +28,28 @@ const checkAlreadyLiked = (element, platform) => {
 
   switch (platform) {
     case 'fanime':
-      return element.className.includes('Active') || checkText(element);
+      // 1. Check inner image source (for main grid/feed posts)
+      const fanimeImg = element.querySelector('img');
+      if (fanimeImg && fanimeImg.src && (fanimeImg.src.includes('F472B6') || fanimeImg.src.includes('%23F472B6'))) {
+        return true;
+      }
+      // 2. Check inner SVG fill (for comments/other icons)
+      const fanimeSvg = element.querySelector('svg');
+      if (fanimeSvg) {
+        const fill = fanimeSvg.getAttribute('fill');
+        const path = fanimeSvg.querySelector('path');
+        const pathFill = path ? path.getAttribute('fill') : null;
+        if ((fill && fill !== 'none' && fill !== 'currentColor') || 
+            (pathFill && pathFill !== 'none' && pathFill !== 'currentColor')) {
+          return true;
+        }
+      }
+      // 3. Check class list (Active/active/undefined)
+      if (element.className.includes('Active') || element.className.includes('active') || element.className.includes('undefined')) {
+        return true;
+      }
+      // 4. Check text content
+      return checkText(element);
 
     case 'linkedin':
       const isLinkedInActive = element.classList.contains('react-button__trigger--active') || 

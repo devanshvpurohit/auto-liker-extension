@@ -5,8 +5,29 @@ const PLATFORM_PRESETS = {
   fanime: {
     selector: 'button[aria-label="Like"]',
     checkLiked: (el) => {
+      // 1. Check inner image source (for main grid/feed posts)
+      const img = el.querySelector('img');
+      if (img && img.src && (img.src.includes('F472B6') || img.src.includes('%23F472B6'))) {
+        return true;
+      }
+      // 2. Check inner SVG fill (for comments/other icons)
+      const svg = el.querySelector('svg');
+      if (svg) {
+        const fill = svg.getAttribute('fill');
+        const path = svg.querySelector('path');
+        const pathFill = path ? path.getAttribute('fill') : null;
+        if ((fill && fill !== 'none' && fill !== 'currentColor') || 
+            (pathFill && pathFill !== 'none' && pathFill !== 'currentColor')) {
+          return true;
+        }
+      }
+      // 3. Check class list (Active/active/undefined)
+      if (el.className.includes('Active') || el.className.includes('active') || el.className.includes('undefined')) {
+        return true;
+      }
+      // 4. Check text content
       const text = el.innerText || '';
-      return el.className.includes('Active') || text.includes('♥') || text.includes('Liked');
+      return text.includes('♥') || text.includes('Liked');
     }
   },
   linkedin: {
