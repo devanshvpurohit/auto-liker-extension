@@ -209,6 +209,7 @@ async function executeLikingLoop() {
   
   // 3. Filter buttons to find the next actionable unliked one
   let unlikedButtons = [];
+  let skippedAlreadyLiked = 0;
   
   for (const btn of buttons) {
     // If already processed in this session, skip
@@ -217,24 +218,29 @@ async function executeLikingLoop() {
     // If it's already liked on the platform, mark as processed and skip
     if (checkAlreadyLiked(btn, state.config.platform)) {
       btn.setAttribute('data-aura-processed', 'true');
+      skippedAlreadyLiked++;
       continue;
     }
 
-    // Quick layout validation: element must have size and be below the current scroll top
+    // Quick layout validation: element must have size
     const rect = btn.getBoundingClientRect();
     const hasSize = rect.width > 0 && rect.height > 0;
-    const isForward = rect.bottom > -100; // Allow a small buffer above viewport
     
-    if (hasSize && isForward) {
+    // Note: We no longer restrict to "forward" only so it can find the first unliked post anywhere in the system
+    if (hasSize) {
       unlikedButtons.push(btn);
     }
+  }
+
+  if (skippedAlreadyLiked > 0) {
+    addLog('info', `Automatically skipped ${skippedAlreadyLiked} already-liked posts.`);
   }
 
   if (unlikedButtons.length > 0) {
     // Reset consecutive scroll safeguard since we found actionable elements
     consecutiveScrollCountWithoutLikes = 0;
     
-    // Choose the first available unliked button (the "next" one)
+    // Choose the first available unliked button (the "next" one in document order)
     let targetButton = unlikedButtons[0];
     
     // If the selector is targeting an SVG or other sub-element, try to find the actual button parent
