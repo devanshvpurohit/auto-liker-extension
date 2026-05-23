@@ -250,6 +250,16 @@ async function executeLikingLoop() {
       targetButton.style.outline = originalOutline;
       
       try {
+        // Double check state right before clicking to prevent unliking
+        if (checkAlreadyLiked(targetButton, state.config.platform) || 
+            (clickableElement !== targetButton && checkAlreadyLiked(clickableElement, state.config.platform))) {
+          addLog('info', 'Post was liked externally or state updated. Skipping to avoid unlike.');
+          targetButton.setAttribute('data-aura-processed', 'true');
+          if (clickableElement !== targetButton) clickableElement.setAttribute('data-aura-processed', 'true');
+          loopTimer = setTimeout(executeLikingLoop, 500);
+          return;
+        }
+
         // Mark as processed BEFORE clicking to ensure we don't pick it again even if loop triggers fast
         targetButton.setAttribute('data-aura-processed', 'true');
         if (clickableElement !== targetButton) {
