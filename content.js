@@ -211,6 +211,94 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep message channel open for async operations
 });
 
+// A helper for sleep/delay
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+async function handleAutoComment(targetButton) {
+  addLog('info', 'Attempting to auto-comment...');
+  
+  // Try to find the closest tile/post container to scope our search
+  const container = targetButton.closest('article, [role="article"], div[class*="tile"], div[class*="post"], div[class*="card"]') || document.body;
+  
+  // Find the Comment button
+  const commentBtn = container.querySelector('button[aria-label="Comment"], button[aria-label*="Comment"]');
+  if (!commentBtn) {
+    addLog('error', 'Comment button not found. Skipping auto-comment.');
+    return;
+  }
+  
+  commentBtn.click();
+  addLog('info', 'Opened comment input.');
+  
+  // Wait for the textarea to appear
+  await delay(1000);
+  let textarea = document.querySelector('textarea, [contenteditable="true"], input[placeholder*="comment" i]');
+  let retries = 5;
+  while (!textarea && retries > 0) {
+    await delay(500);
+    textarea = document.querySelector('textarea, [contenteditable="true"], input[placeholder*="comment" i]');
+    retries--;
+  }
+  
+  if (!textarea) {
+    addLog('error', 'Comment textarea not found. Aborting comment.');
+    // Try to dismiss modal by pressing Escape
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return;
+  }
+  
+  // Generate random comment
+  const templates = (state.config.commentTemplates && state.config.commentTemplates.length > 0) ? state.config.commentTemplates : ['Great project!'];
+  const randomComment = templates[Math.floor(Math.random() * templates.length)];
+  
+  // Inject the comment
+  if (textarea.tagName === 'TEXTAREA' || textarea.tagName === 'INPUT') {
+    textarea.value = randomComment;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    textarea.textContent = randomComment;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  
+  // React 16+ specific hack to update internal value tracker
+  try {
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || 
+                                   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (nativeInputValueSetter && (textarea.tagName === 'TEXTAREA' || textarea.tagName === 'INPUT')) {
+      nativeInputValueSetter.call(textarea, randomComment);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } catch(e) {}
+  
+  addLog('info', `Pasted comment: "${randomComment}"`);
+  await delay(800);
+  
+  // Find Post button and click
+  const buttons = Array.from(document.querySelectorAll('button'));
+  const submitBtn = buttons.find(b => {
+    const text = (b.innerText || b.getAttribute('aria-label') || '').toLowerCase().trim();
+    return text === 'post' || text === 'submit' || text === 'reply' || text === 'comment' || text === 'send';
+  });
+  
+  if (submitBtn) {
+    submitBtn.click();
+    addLog('success', 'Comment posted.');
+  } else {
+    // Fallback: press Enter on the textarea
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    addLog('info', 'Pressed Enter to post comment.');
+  }
+  
+  // Wait a bit to ensure it gets posted
+  await delay(1500);
+  
+  // Try to close modal if it's still open
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  const closeBtn = document.querySelector('button[aria-label="Close"], button[aria-label*="close" i]');
+  if (closeBtn) closeBtn.click();
+}
+
 // The Main Liking Automation Loop
 async function executeLikingLoop() {
   if (state.status !== 'running') return;
@@ -307,6 +395,16 @@ async function executeLikingLoop() {
         state.likesCount++;
         addLog('success', `Liked post #${state.likesCount} on the feed.`);
         broadcastProgress();
+        
+        // Auto-comment integration
+        if (state.config.autoComment) {
+          // Wrap in a try-catch so it doesn't break the loop on error
+          try {
+            await handleAutoComment(targetButton);
+          } catch(e) {
+            addLog('error', `Error in auto-comment: ${e.message}`);
+          }
+        }
         
         // Calculate random delay range based on parameters
         const minVal = state.config.minDelay * 1000;

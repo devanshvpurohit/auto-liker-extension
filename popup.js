@@ -76,6 +76,9 @@ const likesLimitVal = document.getElementById('likes-limit-val');
 const minDelayInput = document.getElementById('min-delay');
 const maxDelayInput = document.getElementById('max-delay');
 const autoScrollCheckbox = document.getElementById('auto-scroll');
+const autoCommentCheckbox = document.getElementById('auto-comment');
+const commentTemplatesWrapper = document.getElementById('comment-templates-wrapper');
+const commentTemplatesInput = document.getElementById('comment-templates');
 
 // Stats Elements
 const statLiked = document.getElementById('stat-liked');
@@ -166,6 +169,16 @@ function setupEventListeners() {
   maxDelayInput.addEventListener('change', validateDelays);
   autoScrollCheckbox.addEventListener('change', saveSettings);
 
+  autoCommentCheckbox.addEventListener('change', () => {
+    if (autoCommentCheckbox.checked) {
+      commentTemplatesWrapper.style.display = 'block';
+    } else {
+      commentTemplatesWrapper.style.display = 'none';
+    }
+    saveSettings();
+  });
+  commentTemplatesInput.addEventListener('input', saveSettings);
+
   // Buttons actions
   btnStart.addEventListener('click', startLikingProcess);
   btnStop.addEventListener('click', stopLikingProcess);
@@ -240,6 +253,9 @@ function syncWithContentScript(state) {
     minDelayInput.value = state.config.minDelay;
     maxDelayInput.value = state.config.maxDelay;
     autoScrollCheckbox.checked = state.config.autoScroll;
+    autoCommentCheckbox.checked = !!state.config.autoComment;
+    commentTemplatesInput.value = state.config.commentTemplates ? state.config.commentTemplates.join('\n') : '';
+    commentTemplatesWrapper.style.display = autoCommentCheckbox.checked ? 'block' : 'none';
     
     // Select platform
     const matchedPlatform = Object.keys(PLATFORM_PRESETS).find(key => 
@@ -278,6 +294,8 @@ function startLikingProcess() {
   const minDelay = parseFloat(minDelayInput.value);
   const maxDelay = parseFloat(maxDelayInput.value);
   const autoScroll = autoScrollCheckbox.checked;
+  const autoComment = autoCommentCheckbox.checked;
+  const commentTemplates = commentTemplatesInput.value.split('\n').map(c => c.trim()).filter(c => c.length > 0);
   
   let selector = customSelectorInput.value.trim();
   if (activePlatform !== 'custom') {
@@ -295,7 +313,9 @@ function startLikingProcess() {
     limit: limit,
     minDelay: minDelay,
     maxDelay: maxDelay,
-    autoScroll: autoScroll
+    autoScroll: autoScroll,
+    autoComment: autoComment,
+    commentTemplates: commentTemplates
   };
 
   logToConsole('info', `Deploying process: Limit ${limit} likes | Delay ${minDelay}-${maxDelay}s`);
@@ -383,6 +403,8 @@ function toggleControlsRunning(isRunning) {
   minDelayInput.disabled = isRunning;
   maxDelayInput.disabled = isRunning;
   autoScrollCheckbox.disabled = isRunning;
+  autoCommentCheckbox.disabled = isRunning;
+  commentTemplatesInput.disabled = isRunning;
   presetButtons.forEach(btn => btn.disabled = isRunning);
   customSelectorInput.disabled = isRunning;
 }
@@ -395,6 +417,8 @@ function disableAllControls() {
   minDelayInput.disabled = true;
   maxDelayInput.disabled = true;
   autoScrollCheckbox.disabled = true;
+  autoCommentCheckbox.disabled = true;
+  commentTemplatesInput.disabled = true;
   presetButtons.forEach(btn => btn.disabled = true);
   customSelectorInput.disabled = true;
   updateStatusUI('stopped');
@@ -438,7 +462,9 @@ function saveSettings() {
     limit: parseInt(likesLimitInput.value),
     minDelay: parseFloat(minDelayInput.value),
     maxDelay: parseFloat(maxDelayInput.value),
-    autoScroll: autoScrollCheckbox.checked
+    autoScroll: autoScrollCheckbox.checked,
+    autoComment: autoCommentCheckbox.checked,
+    commentTemplates: commentTemplatesInput.value
   };
   chrome.storage.local.set({ likerSettings: settings });
 }
@@ -468,6 +494,9 @@ function loadSettings() {
       minDelayInput.value = s.minDelay || 2;
       maxDelayInput.value = s.maxDelay || 5;
       autoScrollCheckbox.checked = s.autoScroll !== undefined ? s.autoScroll : true;
+      autoCommentCheckbox.checked = s.autoComment !== undefined ? s.autoComment : false;
+      commentTemplatesInput.value = s.commentTemplates !== undefined ? s.commentTemplates : "Cool project!\nLove this!\nSo clean!\nAwesome work!\nGreat project!";
+      commentTemplatesWrapper.style.display = autoCommentCheckbox.checked ? 'block' : 'none';
       
       const currentLiked = parseInt(statLiked.innerText) || 0;
       statRemaining.innerText = Math.max(0, s.limit - currentLiked);
@@ -476,6 +505,9 @@ function loadSettings() {
       // Default load: Fanime preset is active
       activePlatform = 'fanime';
       customSelectorInput.value = PLATFORM_PRESETS['fanime'].selector;
+      autoCommentCheckbox.checked = false;
+      commentTemplatesInput.value = "Cool project!\nLove this!\nSo clean!\nAwesome work!\nGreat project!";
+      commentTemplatesWrapper.style.display = 'none';
     }
   });
 }
