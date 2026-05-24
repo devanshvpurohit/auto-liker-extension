@@ -230,19 +230,33 @@ async function handleAutoComment(targetButton) {
   commentBtn.click();
   addLog('info', 'Opened comment input.');
   
+  // Helper to find the actual comment input
+  const findCommentInput = () => {
+    let inputs = Array.from(container.querySelectorAll('textarea, input[type="text"], [contenteditable="true"]'));
+    if (inputs.length === 0) {
+      inputs = Array.from(document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"]'));
+    }
+    // Search from end (most recently added elements, like modals or expanded sections)
+    return inputs.reverse().find(el => {
+      const ph = (el.getAttribute('placeholder') || '').toLowerCase();
+      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+      return !ph.includes('search') && !aria.includes('search');
+    });
+  };
+
   // Wait for the textarea to appear
   await delay(1000);
-  let textarea = document.querySelector('textarea, [contenteditable="true"], input[placeholder*="comment" i]');
-  let retries = 5;
+  let textarea = findCommentInput();
+  let retries = 6; // Try for 3 seconds
   while (!textarea && retries > 0) {
     await delay(500);
-    textarea = document.querySelector('textarea, [contenteditable="true"], input[placeholder*="comment" i]');
+    textarea = findCommentInput();
     retries--;
   }
   
   if (!textarea) {
     addLog('error', 'Comment textarea not found. Aborting comment.');
-    // Try to dismiss modal by pressing Escape
+    // Try to dismiss any modal by pressing Escape
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return;
   }
@@ -251,49 +265,75 @@ async function handleAutoComment(targetButton) {
   const templates = (state.config.commentTemplates && state.config.commentTemplates.length > 0) ? state.config.commentTemplates : ['Great project!'];
   const randomComment = templates[Math.floor(Math.random() * templates.length)];
   
-  // Inject the comment
-  if (textarea.tagName === 'TEXTAREA' || textarea.tagName === 'INPUT') {
-    textarea.value = randomComment;
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    textarea.dispatchEvent(new Event('change', { bubbles: true }));
-  } else {
+  // Inject the comment safely
+  textarea.focus();
+  
+  let inserted = false;
+  try {
+    // Method 1: execCommand simulates real user typing and triggers React's internal state accurately
+    inserted = document.execCommand('insertText', false, randomComment);
+  } catch(e) {}
+
+  if (!inserted && (textarea.tagName === 'TEXTAREA' || textarea.tagName === 'INPUT')) {
+    // Method 2: Native React setter bypass
+    try {
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || 
+                                     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      if (nativeInputValueSetter) {
+        nativeInputValueSetter.call(textarea, randomComment);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        textarea.value = randomComment;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    } catch(e) {}
+  } else if (!inserted && textarea.isContentEditable) {
     textarea.textContent = randomComment;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
   
-  // React 16+ specific hack to update internal value tracker
-  try {
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || 
-                                   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-    if (nativeInputValueSetter && (textarea.tagName === 'TEXTAREA' || textarea.tagName === 'INPUT')) {
-      nativeInputValueSetter.call(textarea, randomComment);
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  } catch(e) {}
-  
   addLog('info', `Pasted comment: "${randomComment}"`);
-  await delay(800);
+  await delay(800); // Give React time to update state
   
   // Find Post button and click
-  const buttons = Array.from(document.querySelectorAll('button'));
-  const submitBtn = buttons.find(b => {
-    const text = (b.innerText || b.getAttribute('aria-label') || '').toLowerCase().trim();
-    return text === 'post' || text === 'submit' || text === 'reply' || text === 'comment' || text === 'send';
-  });
+  const form = textarea.closest('form');
+  let submitBtn = null;
+  if (form) {
+    submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+  }
+  
+  if (!submitBtn) {
+    // Look for a button containing words like "Post", "Reply", "Send" or icons for send inside the container or body
+    const searchRoot = (textarea.closest('div[role="dialog"]') || container || document.body);
+    const buttons = Array.from(searchRoot.querySelectorAll('button'));
+    submitBtn = buttons.reverse().find(b => {
+      const text = (b.innerText || b.getAttribute('aria-label') || '').toLowerCase().trim();
+      const hasSendIcon = b.querySelector('svg[aria-label*="send" i], svg[aria-label*="post" i]');
+      return text === 'post' || text === 'submit' || text === 'reply' || text === 'comment' || text === 'send' || hasSendIcon;
+    });
+  }
   
   if (submitBtn) {
     submitBtn.click();
-    addLog('success', 'Comment posted.');
+    addLog('success', 'Comment posted via button click.');
   } else {
     // Fallback: press Enter on the textarea
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    const createKey = (type) => new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true });
+    textarea.dispatchEvent(createKey('keydown'));
+    textarea.dispatchEvent(createKey('keypress'));
+    textarea.dispatchEvent(createKey('keyup'));
+    
+    if (form) {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
     addLog('info', 'Pressed Enter to post comment.');
   }
   
   // Wait a bit to ensure it gets posted
   await delay(1500);
   
-  // Try to close modal if it's still open
+  // Try to close modal if it's still open (if it was a modal)
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   const closeBtn = document.querySelector('button[aria-label="Close"], button[aria-label*="close" i]');
   if (closeBtn) closeBtn.click();
